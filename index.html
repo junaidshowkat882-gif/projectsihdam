@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIH26161 · Dam-Breach Flood Screening</title>
+  <meta name="description" content="Screening-grade dam-breach inundation on real global terrain data.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='1.6'%3E%3Cpath d='M2 17c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2' stroke-linecap='round'/%3E%3Cpath d='M2 11c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2' stroke-linecap='round' opacity='.6'/%3E%3Cpath d='M4 20h16' stroke-linecap='round' opacity='.35'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+  >
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css?v=16">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2 17c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" stroke-linecap="round"/>
+            <path d="M2 11c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" stroke-linecap="round" opacity=".6"/>
+            <path d="M4 20h16" stroke-linecap="round" opacity=".35"/>
+          </svg>
+        </span>
+        <div class="brand__text">
+          <h1>Dam-Breach Flood Screening</h1>
+          <p>SIH26161 · real terrain, volume-consistent inundation</p>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button id="api-status" class="pill" type="button" title="API connection">
+          <span class="pill__dot" aria-hidden="true"></span>
+          <span class="pill__label">connecting…</span>
+        </button>
+        <button id="btn-settings" class="btn btn--ghost" type="button">API settings</button>
+        <button id="btn-export" class="btn btn--ghost" type="button" disabled>Export GeoJSON</button>
+        <button id="btn-copy" class="btn btn--ghost" type="button" disabled>Copy summary</button>
+        <button id="btn-print" class="btn btn--ghost" type="button" disabled>Print report</button>
+        <button id="btn-anim" class="btn btn--primary" type="button" disabled>Play animation</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="panel" aria-label="Scenario controls">
+        <!-- Printed first: report masthead. Hidden on screen. -->
+        <div class="print-only print-head" id="print-head"></div>
+
+        <!-- The interactive map cannot be printed, so the report carries its own
+             schematic footprint drawn from the flood GeoJSON. Filled by app.js. -->
+        <figure class="print-only print-map" id="print-map"></figure>
+
+        <form id="simulation-form" novalidate>
+          <!-- Reservoir -------------------------------------------------- -->
+          <section class="card">
+            <header class="card__head">
+              <h2>Reservoir</h2>
+              <span class="card__hint">1 of 3</span>
+            </header>
+
+            <label class="field">
+              <span class="field__label">Dam</span>
+              <select id="dam" name="dam_id" required></select>
+            </label>
+
+            <p class="dam-meta" id="dam-meta">Loading dam register…</p>
+
+            <div class="field-row">
+              <label class="field">
+                <span class="field__label">Release level<span class="unit">m MSL</span></span>
+                <input id="release-level" name="release_level_m" type="number"
+                       step="0.1" min="-500" max="9000">
+              </label>
+              <label class="field">
+                <span class="field__label">Release volume<span class="unit">MCM</span></span>
+                <input id="release-volume" name="release_volume_mcm" type="number"
+                       step="1" min="1" max="100000">
+              </label>
+            </div>
+
+            <p class="field__help" id="register-help">
+              Pre-filled from the dam register (indicative published figures). The
+              release volume anchors the model: the water-surface gradient is solved
+              so the inundation holds exactly this much water.
+            </p>
+          </section>
+
+          <!-- Terrain ---------------------------------------------------- -->
+          <section class="card">
+            <header class="card__head">
+              <h2>Terrain</h2>
+              <span class="card__hint">2 of 3</span>
+            </header>
+
+            <div class="radio-cards" role="radiogroup" aria-label="Terrain source">
+              <label class="radio-card">
+                <input type="radio" name="terrain_source" value="auto" checked>
+                <span class="radio-card__body">
+                  <span class="radio-card__title">Automatic global DEM</span>
+                  <span class="radio-card__sub" id="auto-source-note">
+                    Fetches real elevation tiles around the dam — no upload, no GIS install.
+                  </span>
+                </span>
+              </label>
+              <label class="radio-card" id="upload-card">
+                <input type="radio" name="terrain_source" value="upload">
+                <span class="radio-card__body">
+                  <span class="radio-card__title">Upload a GeoTIFF</span>
+                  <span class="radio-card__sub" id="upload-source-note">
+                    Requires GDAL on the server.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div id="upload-block" hidden>
+              <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-describedby="dem-help">
+                <input id="dem" name="dem_file" type="file" accept=".tif,.tiff,.geotiff" hidden>
+                <span class="dropzone__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <path d="M12 16V4m0 0L8 8m4-4 4 4" stroke-linecap="round"/>
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <span class="dropzone__title">Drop a GeoTIFF DEM here</span>
+                <span class="dropzone__sub">or click to browse · .tif / .tiff</span>
+              </div>
+
+              <div class="file-chip" id="file-chip" hidden>
+                <span class="file-chip__name" id="file-name"></span>
+                <span class="file-chip__size" id="file-size"></span>
+                <button type="button" class="file-chip__clear" id="btn-clear-file" aria-label="Remove DEM">×</button>
+              </div>
+              <p class="field__help" id="dem-help">
+                Downsampled server-side to stay inside the grid budget. Nodata and the
+                value mask are both honoured.
+              </p>
+            </div>
+
+            <label class="field" for="radius">
+              <span class="field__label">
+                Analysis radius
+                <output class="field__value" id="radius-output">20 km</output>
+              </span>
+              <input id="radius" name="radius_km" type="range" min="5" max="40" step="1" value="20">
+              <span class="field__scale"><span>5 km</span><span>40 km</span></span>
+              <span class="field__help">
+                How far downstream to look. Flooding that reaches the window edge is
+                reported as clipped.
+              </span>
+            </label>
+
+            <label class="field" for="breach-head">
+              <span class="field__label">
+                Breach head
+                <output class="field__value" id="breach-output">—</output>
+              </span>
+              <input id="breach-head" name="breach_head_m" type="range" min="1" max="200" step="1" value="30">
+              <span class="field__scale"><span>1 m</span><span>200 m</span></span>
+              <span class="field__help">
+                Water depth over the breach. Drives the peak-discharge estimate
+                (<span class="mono">Q = 8/27 · b · √g · H^1.5</span>), not the mapped extent.
+              </span>
+            </label>
+
+            <details class="advanced">
+              <summary>Advanced model options</summary>
+
+              <label class="field">
+                <span class="field__label">Breach width<span class="unit">m</span></span>
+                <input id="breach-width" name="breach_width_m" type="number" step="1" min="1" max="5000" value="30">
+              </label>
+
+              <label class="field">
+                <span class="field__label">Water-surface gradient</span>
+                <select id="attenuation-mode">
+                  <option value="auto" selected>Solve from the release volume</option>
+                  <option value="manual">Set manually</option>
+                </select>
+              </label>
+
+              <label class="field" for="attenuation" id="attenuation-field" hidden>
+                <span class="field__label">
+                  Gradient
+                  <output class="field__value" id="attenuation-output">1.00 m/km</output>
+                </span>
+                <input id="attenuation" name="attenuation_m_per_km" type="range"
+                       min="0" max="15" step="0.25" value="1">
+                <span class="field__scale"><span>0 (flat pool)</span><span>15 m/km</span></span>
+              </label>
+
+              <label class="check">
+                <input type="checkbox" id="exposure-toggle" checked>
+                <span>Look up mapped assets inside the flood (OpenStreetMap)</span>
+              </label>
+
+              <label class="check">
+                <input type="checkbox" id="verify-toggle" checked>
+                <span>Cross-check terrain against an independent elevation source</span>
+              </label>
+            </details>
+          </section>
+
+          <!-- Targets ---------------------------------------------------- -->
+          <section class="card">
+            <header class="card__head">
+              <h2>Areas of interest</h2>
+              <span class="card__hint">3 of 3</span>
+            </header>
+
+            <div class="target-grid">
+              <fieldset class="target" data-target="1">
+                <legend>
+                  <span class="target__tag">A1</span>
+                  Area 1
+                  <button type="button" class="btn btn--pick" data-pick="1"
+                          aria-pressed="false" title="Pick Area 1 on the map">Pick on map</button>
+                </legend>
+                <label class="field field--inline">
+                  <span class="field__label">Lat</span>
+                  <input id="area1-lat" name="area1_lat" type="number" step="any"
+                         min="-90" max="90" value="31.30" required>
+                </label>
+                <label class="field field--inline">
+                  <span class="field__label">Lon</span>
+                  <input id="area1-lon" name="area1_lon" type="number" step="any"
+                         min="-180" max="180" value="76.45" required>
+                </label>
+                <p class="target__status" data-status="1">Not simulated yet</p>
+              </fieldset>
+
+              <fieldset class="target" data-target="2">
+                <legend>
+                  <span class="target__tag">A2</span>
+                  Area 2
+                  <button type="button" class="btn btn--pick" data-pick="2"
+                          aria-pressed="false" title="Pick Area 2 on the map">Pick on map</button>
+                </legend>
+                <label class="field field--inline">
+                  <span class="field__label">Lat</span>
+                  <input id="area2-lat" name="area2_lat" type="number" step="any"
+                         min="-90" max="90" value="31.25" required>
+                </label>
+                <label class="field field--inline">
+                  <span class="field__label">Lon</span>
+                  <input id="area2-lon" name="area2_lon" type="number" step="any"
+                         min="-180" max="180" value="76.45" required>
+                </label>
+                <p class="target__status" data-status="2">Not simulated yet</p>
+              </fieldset>
+            </div>
+          </section>
+
+          <div class="panel__actions">
+            <button id="run-button" class="btn btn--primary" type="submit">
+              <span class="btn__spinner" aria-hidden="true"></span>
+              <span class="btn__text">Run screening</span>
+            </button>
+            <button id="btn-reset" class="btn btn--ghost" type="button">Reset</button>
+          </div>
+
+          <p class="banner banner--warning" id="mode-note" hidden></p>
+          <p class="banner banner--error" id="snap-note" hidden></p>
+          <p class="banner banner--error" id="error-note" hidden></p>
+
+          <p class="print-only print-scenario" id="print-scenario"></p>
+        </form>
+
+        <section class="results" id="results" aria-live="polite">
+          <!-- A live loading state, not a standing "nothing loaded" card: the
+               default scenario runs automatically on load, so this only shows
+               while terrain is being fetched and the footprint solved. -->
+          <div class="results__empty" id="results-empty" role="status">
+            <span class="results__spinner" aria-hidden="true"></span>
+            <p id="results-empty-text">Loading the default scenario — fetching terrain
+               and solving the flood footprint.</p>
+          </div>
+          <div id="results-body" hidden></div>
+        </section>
+
+        <footer class="print-only print-foot" id="print-foot"></footer>
+      </aside>
+
+      <section class="stage" aria-label="Flood map">
+        <div id="map"></div>
+
+        <!-- 3-D valley: the same modelled DEM + solved depth field as a real
+             Three.js scene (terrain mesh, water surface, dam wall). The 2-D
+             Leaflet map stays the default; this panel swaps in on demand. -->
+        <div class="valley" id="valley" hidden>
+          <canvas class="valley__canvas" id="valley-canvas" aria-label="3-D valley view of the modelled flood"></canvas>
+          <div class="valley__hud" id="valley-hud" role="status" aria-live="polite"></div>
+          <div class="valley__panel" id="valley-panel">
+            <div class="valley__row valley__row--title">
+              <strong id="valley-title">3-D valley</strong>
+              <button class="btn btn--ghost sim__small" id="valley-close" type="button">2-D map</button>
+            </div>
+            <label class="valley__row">
+              <span>Breach opening</span>
+              <input type="range" id="valley-breach" min="0" max="100" step="1" value="100">
+              <code id="valley-breach-out">100%</code>
+            </label>
+            <label class="valley__row">
+              <span>Water level</span>
+              <input type="range" id="valley-level" min="0" max="100" step="1" value="100">
+              <code id="valley-level-out">full</code>
+            </label>
+            <label class="valley__row">
+              <span>Vertical lift</span>
+              <input type="range" id="valley-lift" min="50" max="400" step="10" value="180">
+              <code id="valley-lift-out">1.8×</code>
+            </label>
+            <div class="valley__row valley__row--btns">
+              <button class="btn btn--primary sim__small" id="valley-play" type="button" aria-pressed="true">Pause</button>
+              <button class="btn btn--ghost sim__small" id="valley-spin" type="button" aria-pressed="false">Orbit: off</button>
+              <button class="btn btn--ghost sim__small" id="valley-reset" type="button">Reset view</button>
+            </div>
+            <p class="valley__note" id="valley-note"></p>
+          </div>
+          <div class="valley__legend" id="valley-legend" aria-hidden="true"></div>
+        </div>
+
+        <!-- Shown only when the Leaflet CDN is unreachable; never as a standing
+             "nothing loaded yet" card over the map. -->
+        <div class="stage__fallback" id="map-fallback" hidden>
+          <h3>Map library unavailable</h3>
+          <p>Leaflet could not be loaded from the CDN. Metrics, plots, caveats and export
+             still work — reconnect and reload to get the map back.</p>
+        </div>
+
+        <div class="stage__top">
+          <div class="segmented" role="group" aria-label="Basemap">
+            <button type="button" class="segmented__btn is-active" data-basemap="dark">Dark</button>
+            <button type="button" class="segmented__btn" data-basemap="terrain">Terrain</button>
+            <button type="button" class="segmented__btn" data-basemap="satellite">Satellite</button>
+          </div>
+          <div class="segmented" role="group" aria-label="Map view">
+            <button type="button" class="segmented__btn is-active" data-mapview="2d">2-D</button>
+            <button type="button" class="segmented__btn" data-mapview="3d" id="btn-3d">3-D valley</button>
+          </div>
+        </div>
+
+        <div class="legend" id="legend" hidden>
+          <h4>Flood depth</h4>
+          <ul id="legend-list">
+            <li><i style="--swatch: var(--sev-extreme)"></i>&gt;5 m</li>
+            <li><i style="--swatch: var(--sev-severe)"></i>2–5 m</li>
+            <li><i style="--swatch: var(--sev-moderate)"></i>1–2 m</li>
+            <li><i style="--swatch: var(--sev-minor)"></i>0.5–1 m</li>
+            <li><i style="--swatch: var(--sev-shallow)"></i>&lt;0.5 m</li>
+          </ul>
+          <p class="legend__note" id="legend-note"></p>
+        </div>
+
+        <div class="stage__bottom">
+          <div class="readout">
+            <span class="readout__label">cursor</span>
+            <code id="cursor-readout">—</code>
+          </div>
+          <div class="summary-chips" id="summary-chips" hidden></div>
+        </div>
+
+        <!-- Screening animation: a canvas replay of the breach drawn over the map.
+             Every clock, area ticker and ETA on it is read off the payload the
+             model returned, so it shows the result rather than inventing one. -->
+        <div class="sim" id="sim" hidden>
+          <canvas class="sim__canvas" id="sim-canvas" aria-hidden="true"></canvas>
+
+          <div class="sim__hud" id="sim-hud" role="status" aria-live="polite"></div>
+
+          <div class="sim__bar">
+            <div class="segmented sim__segments" id="sim-scenarios" role="group"
+                 aria-label="Animation scenario"></div>
+            <div class="sim__transport">
+              <button class="btn btn--ghost sim__small" id="sim-restart" type="button">Restart</button>
+              <button class="btn btn--primary sim__small" id="sim-play" type="button"
+                      aria-pressed="true">Pause</button>
+              <label class="sim__speed">
+                <span>Speed</span>
+                <select id="sim-speed" aria-label="Playback speed">
+                  <option value="1" selected>×1</option>
+                  <option value="2">×2</option>
+                  <option value="4">×4</option>
+                  <option value="8">×8</option>
+                </select>
+              </label>
+              <label class="sim__speed">
+                <span>Particles</span>
+                <select id="sim-density" aria-label="Particle density">
+                  <option value="0.5">Low</option>
+                  <option value="1" selected>Med</option>
+                  <option value="1.75">High</option>
+                </select>
+              </label>
+              <label class="sim__speed">
+                <span>Trails</span>
+                <select id="sim-trails" aria-label="Trail length">
+                  <option value="0.5">Short</option>
+                  <option value="1" selected>Med</option>
+                  <option value="1.8">Long</option>
+                </select>
+              </label>
+              <label class="sim__check" title="Impact shake + breach flash at the start of the run">
+                <input type="checkbox" id="sim-fx" checked>
+                <span>Impact FX</span>
+              </label>
+              <label class="sim__check" title="Dim the basemap while the replay runs">
+                <input type="checkbox" id="sim-dim" checked>
+                <span>Dim map</span>
+              </label>
+              <code class="sim__clock" id="sim-clock">T+00:00:00</code>
+              <button class="btn btn--ghost sim__small" id="sim-close" type="button">Close</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts" aria-live="polite"></div>
+
+  <dialog class="dialog" id="settings-dialog">
+    <form method="dialog" class="dialog__form">
+      <h2>API endpoint</h2>
+      <p class="dialog__lede">
+        Point the UI at a running <code>uvicorn main:app</code> instance. When this page
+        is served by the API itself, the default already works.
+      </p>
+      <label class="field">
+        <span class="field__label">Base URL</span>
+        <input id="api-url" type="url" spellcheck="false" placeholder="http://127.0.0.1:8010">
+      </label>
+      <div class="dialog__row">
+        <button value="cancel" class="btn btn--ghost" type="submit">Close</button>
+        <button id="btn-test-api" value="none" class="btn btn--primary" type="button">Test connection</button>
+      </div>
+      <p class="dialog__status" id="api-test-status"></p>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js?v=16"></script>
+</body>
+</html>

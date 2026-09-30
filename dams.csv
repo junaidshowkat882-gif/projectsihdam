@@ -1,0 +1,6 @@
+dam_id,name,state,latitude,longitude,reservoir_level_m,storage_mcm,dam_height_m
+DAM001,Bhakra Dam,Himachal Pradesh,31.411,76.432,515.1,9621,226.0
+DAM002,Tehri Dam,Uttarakhand,30.375,78.480,830.0,3540,260.5
+DAM003,Hirakud Dam,Odisha,21.525,83.872,192.02,8136,60.96
+DAM004,Sardar Sarovar Dam,Gujarat,21.830,73.750,138.68,9500,163.0
+DAM005,Mettur Dam,Tamil Nadu,11.801,77.804,230.0,2640,37.0

@@ -1,0 +1,7 @@
+[
+  { "dam_id": "DAM001", "name": "Bhakra Dam", "state": "Himachal Pradesh", "latitude": 31.411, "longitude": 76.432, "reservoir_level_m": 515.1, "storage_mcm": 9621, "dam_height_m": 226.0 },
+  { "dam_id": "DAM002", "name": "Tehri Dam", "state": "Uttarakhand", "latitude": 30.375, "longitude": 78.480, "reservoir_level_m": 830.0, "storage_mcm": 3540, "dam_height_m": 260.5 },
+  { "dam_id": "DAM003", "name": "Hirakud Dam", "state": "Odisha", "latitude": 21.525, "longitude": 83.872, "reservoir_level_m": 192.02, "storage_mcm": 8136, "dam_height_m": 60.96 },
+  { "dam_id": "DAM004", "name": "Sardar Sarovar Dam", "state": "Gujarat", "latitude": 21.830, "longitude": 73.750, "reservoir_level_m": 138.68, "storage_mcm": 9500, "dam_height_m": 163.0 },
+  { "dam_id": "DAM005", "name": "Mettur Dam", "state": "Tamil Nadu", "latitude": 11.801, "longitude": 77.804, "reservoir_level_m": 230.0, "storage_mcm": 2640, "dam_height_m": 37.0 }
+]
